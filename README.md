@@ -56,6 +56,19 @@ If a game variant uses a different project folder name:
 ./convert_marvel_rivals_mod.sh /path/to/old_mod --name MyMod --project-name Marvel
 ```
 
+Retarget old cooked IDs (example: old `1036001` assets to `1036801` paths/package names):
+
+```bash
+./convert_marvel_rivals_mod.sh /path/to/old_mod --name MyMod \
+  --retarget-from 1036001 --retarget-to 1036801
+```
+
+Notes for retargeting:
+
+- `--retarget-from` and `--retarget-to` must be the same string length.
+- The script patches `.uasset` and `.uexp` metadata tokens and renames staged paths/files.
+- This is a best-effort compatibility step for old cooked mods targeting changed skin IDs.
+
 ### Windows `.bat` usage
 
 From Command Prompt in this folder:

@@ -17,6 +17,8 @@ Options:
   --retoc <path>              Path to retoc.exe (default: auto-detect)
   --version <ue_version>      retoc engine version (default: UE5_3)
   --project-name <name>       Unreal project folder name used for staging (default: Marvel)
+  --retarget-from <id>        Optional cooked-ID string to replace in paths and package metadata
+  --retarget-to <id>          Replacement for --retarget-from (must be same length)
   --install                   Copy output files into game ~mods folder after convert
   --mods-dir <path>           Override install folder for --install
   -h, --help                  Show this help
@@ -99,6 +101,8 @@ MOD_NAME=""
 RETOC_PATH=""
 ENGINE_VERSION="UE5_3"
 PROJECT_NAME="Marvel"
+RETARGET_FROM=""
+RETARGET_TO=""
 INSTALL="false"
 MODS_DIR="/mnt/c/Program Files (x86)/Steam/steamapps/common/MarvelRivals/MarvelGame/Marvel/Content/Paks/~mods"
 
@@ -131,6 +135,16 @@ while [[ $# -gt 0 ]]; do
     --project-name)
       [[ $# -ge 2 ]] || err "--project-name requires a value"
       PROJECT_NAME="$2"
+      shift 2
+      ;;
+    --retarget-from)
+      [[ $# -ge 2 ]] || err "--retarget-from requires a value"
+      RETARGET_FROM="$2"
+      shift 2
+      ;;
+    --retarget-to)
+      [[ $# -ge 2 ]] || err "--retarget-to requires a value"
+      RETARGET_TO="$2"
       shift 2
       ;;
     --install)
@@ -169,6 +183,11 @@ OUTPUT_DIR="$(to_wsl_path_if_windows "$OUTPUT_DIR")"
 MODS_DIR="$(to_wsl_path_if_windows "$MODS_DIR")"
 if [[ -n "$RETOC_PATH" ]]; then
   RETOC_PATH="$(to_wsl_path_if_windows "$RETOC_PATH")"
+fi
+
+if [[ -n "$RETARGET_FROM" || -n "$RETARGET_TO" ]]; then
+  [[ -n "$RETARGET_FROM" && -n "$RETARGET_TO" ]] || err "Use --retarget-from and --retarget-to together."
+  [[ "${#RETARGET_FROM}" -eq "${#RETARGET_TO}" ]] || err "--retarget-from and --retarget-to must have equal length."
 fi
 
 if [[ ! -e "$INPUT_PATH" ]]; then
@@ -246,6 +265,39 @@ OUT_PAK="$OUTPUT_DIR/${MOD_NAME}.pak"
 STAGE_DIR="$(mktemp -d)"
 mkdir -p "$STAGE_DIR/$PROJECT_NAME"
 cp -r "$CONTENT_SRC" "$STAGE_DIR/$PROJECT_NAME/Content"
+
+if [[ -n "$RETARGET_FROM" ]]; then
+  RETARGET_ROOT="$STAGE_DIR/$PROJECT_NAME/Content"
+  echo "Retargeting IDs in staged content:"
+  echo "  from: $RETARGET_FROM"
+  echo "  to:   $RETARGET_TO"
+
+  # 1) Move files to rewritten paths (handles both folder and file name retargeting).
+  RENAME_COUNT=0
+  while IFS= read -r F; do
+    NEW_F="${F//$RETARGET_FROM/$RETARGET_TO}"
+    if [[ "$F" != "$NEW_F" ]]; then
+      mkdir -p "$(dirname "$NEW_F")"
+      mv "$F" "$NEW_F"
+      RENAME_COUNT=$((RENAME_COUNT + 1))
+    fi
+  done < <(find "$RETARGET_ROOT" -type f)
+
+  # Remove any empty directories left after file moves.
+  find "$RETARGET_ROOT" -type d -empty -delete
+
+  # 2) Replace token inside cooked metadata files.
+  PATCH_COUNT=0
+  while IFS= read -r F; do
+    TMP_F="${F}.tmp"
+    perl -0777 -pe "s/\\Q$RETARGET_FROM\\E/$RETARGET_TO/g" "$F" > "$TMP_F"
+    mv "$TMP_F" "$F"
+    PATCH_COUNT=$((PATCH_COUNT + 1))
+  done < <(find "$RETARGET_ROOT" -type f \( -iname '*.uasset' -o -iname '*.uexp' \))
+
+  echo "  renamed paths: $RENAME_COUNT"
+  echo "  patched files: $PATCH_COUNT"
+fi
 
 WORK_INPUT_W="$(wslpath -w "$STAGE_DIR")"
 OUT_UTOC_W="$(wslpath -w "$OUT_UTOC")"
