@@ -16,6 +16,7 @@ Options:
   --name <mod_name>           Base name for output files (default: derived from input)
   --retoc <path>              Path to retoc.exe (default: auto-detect)
   --version <ue_version>      retoc engine version (default: UE5_3)
+  --project-name <name>       Unreal project folder name used for staging (default: Marvel)
   --install                   Copy output files into game ~mods folder after convert
   --mods-dir <path>           Override install folder for --install
   -h, --help                  Show this help
@@ -97,6 +98,7 @@ OUTPUT_DIR="$PWD/converted_mods"
 MOD_NAME=""
 RETOC_PATH=""
 ENGINE_VERSION="UE5_3"
+PROJECT_NAME="Marvel"
 INSTALL="false"
 MODS_DIR="/mnt/c/Program Files (x86)/Steam/steamapps/common/MarvelRivals/MarvelGame/Marvel/Content/Paks/~mods"
 
@@ -124,6 +126,11 @@ while [[ $# -gt 0 ]]; do
     --version)
       [[ $# -ge 2 ]] || err "--version requires a value"
       ENGINE_VERSION="$2"
+      shift 2
+      ;;
+    --project-name)
+      [[ $# -ge 2 ]] || err "--project-name requires a value"
+      PROJECT_NAME="$2"
       shift 2
       ;;
     --install)
@@ -169,9 +176,13 @@ if [[ ! -e "$INPUT_PATH" ]]; then
 fi
 
 TMP_DIR=""
+STAGE_DIR=""
 cleanup() {
   if [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]]; then
     rm -rf "$TMP_DIR"
+  fi
+  if [[ -n "$STAGE_DIR" && -d "$STAGE_DIR" ]]; then
+    rm -rf "$STAGE_DIR"
   fi
 }
 trap cleanup EXIT
@@ -203,6 +214,21 @@ if ! find "$WORK_INPUT" -type f \( -iname '*.uasset' -o -iname '*.uexp' -o -inam
   err "No .uasset/.uexp/.ubulk files found under: $WORK_INPUT"
 fi
 
+CONTENT_SRC=""
+if [[ -d "$WORK_INPUT/Content" ]]; then
+  CONTENT_SRC="$WORK_INPUT/Content"
+elif [[ "$(basename "$WORK_INPUT")" == "Content" && -d "$WORK_INPUT" ]]; then
+  CONTENT_SRC="$WORK_INPUT"
+else
+  # Accept one nested project folder like <root>/<ProjectName>/Content
+  CANDIDATE="$(find "$WORK_INPUT" -mindepth 2 -maxdepth 2 -type d -name Content | head -n 1 || true)"
+  if [[ -n "$CANDIDATE" ]]; then
+    CONTENT_SRC="$CANDIDATE"
+  fi
+fi
+
+[[ -n "$CONTENT_SRC" && -d "$CONTENT_SRC" ]] || err "Could not locate a Content folder under: $WORK_INPUT"
+
 RETOC_PATH="$(find_retoc "$RETOC_PATH")"
 
 if [[ -z "$MOD_NAME" ]]; then
@@ -216,13 +242,20 @@ OUT_UTOC="$OUTPUT_DIR/${MOD_NAME}.utoc"
 OUT_UCAS="$OUTPUT_DIR/${MOD_NAME}.ucas"
 OUT_PAK="$OUTPUT_DIR/${MOD_NAME}.pak"
 
-WORK_INPUT_W="$(wslpath -w "$WORK_INPUT")"
+# Stage into <ProjectName>/Content so output filename paths match typical game layout.
+STAGE_DIR="$(mktemp -d)"
+mkdir -p "$STAGE_DIR/$PROJECT_NAME"
+cp -r "$CONTENT_SRC" "$STAGE_DIR/$PROJECT_NAME/Content"
+
+WORK_INPUT_W="$(wslpath -w "$STAGE_DIR")"
 OUT_UTOC_W="$(wslpath -w "$OUT_UTOC")"
 
 echo "Converting with retoc..."
 echo "  input:   $WORK_INPUT"
+echo "  staged:  $STAGE_DIR/$PROJECT_NAME/Content"
 echo "  output:  $OUT_UTOC"
 echo "  version: $ENGINE_VERSION"
+echo "  project: $PROJECT_NAME"
 echo "  retoc:   $RETOC_PATH"
 
 "$RETOC_PATH" to-zen --version "$ENGINE_VERSION" "$WORK_INPUT_W" "$OUT_UTOC_W"

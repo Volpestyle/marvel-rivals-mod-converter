@@ -22,6 +22,8 @@ Default game mods folder:
 
 `C:\Program Files (x86)\Steam\steamapps\common\MarvelRivals\MarvelGame\Marvel\Content\Paks\~mods`
 
+By default the converter stages files into `Marvel/Content/...` before packing, which matches the typical Marvel Rivals project layout.
+
 ## Usage
 
 ### WSL/bash usage
@@ -46,6 +48,12 @@ If `retoc.exe` is elsewhere:
 
 ```bash
 ./convert_marvel_rivals_mod.sh /path/to/old_mod --name MyMod --retoc "/mnt/c/Users/you/Downloads/retoc-x86_64-pc-windows-msvc/retoc.exe"
+```
+
+If a game variant uses a different project folder name:
+
+```bash
+./convert_marvel_rivals_mod.sh /path/to/old_mod --name MyMod --project-name Marvel
 ```
 
 ### Windows `.bat` usage
